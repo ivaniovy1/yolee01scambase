@@ -26,6 +26,16 @@
   @media(max-width:880px){.row{flex-direction:column;align-items:stretch}}
   #loginWrapper {max-width: 320px; margin: 100px auto; padding: 20px; background: #1c293b; border-radius: 10px;}
   #welcomeMsg {margin-bottom: 16px; font-size: 18px; color: #7ee787;}
+
+  /* Цвета для статусов */
+  tr[data-status="scammer"] {
+    background-color: #581c1c;
+    color: #ff6b6b;
+  }
+  tr[data-status="trusted"] {
+    background-color: #143214;
+    color: #6bff8a;
+  }
 </style>
 </head>
 <body>
@@ -59,7 +69,6 @@
       <option value="">All statuses</option>
       <option value="scammer">scammer</option>
       <option value="trusted">trusted</option>
-      <option value="unknown">unknown</option>
     </select>
     <button id="applyFilter">Apply</button>
   </div>
@@ -126,14 +135,14 @@
       for(const k of keys){
         const item = data[k] || {};
         const id = item.id ?? '';
-        const status = item.status ?? 'unknown';
+        let status = item.status ?? 'trusted'; // по умолчанию trusted
+        if(status !== 'trusted' && status !== 'scammer') status = 'trusted'; // строго два статуса
         const link = item.link ?? item.proof ?? '';
-        html += `<tr data-username="${escapeHtml(k)}">
+        html += `<tr data-username="${escapeHtml(k)}" data-status="${status}">
           <td><strong>${escapeHtml(k)}</strong></td>
           <td><input data-field="id" value="${escapeHtml(String(id))}" style="width:120px" /></td>
           <td>
             <select data-field="status">
-              <option value="unknown"${status==='unknown'?' selected':''}>unknown</option>
               <option value="trusted"${status==='trusted'?' selected':''}>trusted</option>
               <option value="scammer"${status==='scammer'?' selected':''}>scammer</option>
             </select>
@@ -154,6 +163,11 @@
 
     tableWrap.querySelectorAll('button[data-action]').forEach(btn=>{
       btn.addEventListener('click', onRowAction);
+    });
+
+    // Подвешиваем обработчики на изменения в инпутах таблицы для моментального сохранения
+    tableWrap.querySelectorAll('input[data-field], select[data-field]').forEach(el=>{
+      el.oninput = () => collectRowData();
     });
   }
 
@@ -178,12 +192,15 @@
       const username = r.getAttribute('data-username');
       const idRaw = r.querySelector('input[data-field="id"]').value.trim();
       const id = idRaw === '' ? null : (isNaN(Number(idRaw)) ? idRaw : Number(idRaw));
-      const status = r.querySelector('select[data-field="status"]').value;
+      let status = r.querySelector('select[data-field="status"]').value;
+      if(status !== 'trusted' && status !== 'scammer') status = 'trusted';
       const link = r.querySelector('input[data-field="link"]').value.trim() || null;
       newDb[username] = {};
       if(id !== null) newDb[username].id = id;
       if(status) newDb[username].status = status;
       if(link) newDb[username].link = link;
+      // Обновляем атрибут для визуала сразу
+      r.setAttribute('data-status', status);
     });
     DB = newDb;
     return DB;
@@ -242,7 +259,7 @@
     const filtered = {};
     for(const [k,v] of Object.entries(DB)){
       if(q && !k.toLowerCase().includes(q)) continue;
-      if(status && (v.status||'unknown') !== status) continue;
+      if(status && (v.status||'trusted') !== status) continue;
       filtered[k] = v;
     }
     renderTable(filtered);
