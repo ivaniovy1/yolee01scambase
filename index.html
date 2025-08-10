@@ -9,7 +9,7 @@
   .wrap{max-width:1100px;margin:0 auto}
   h1{font-size:20px;margin:0 0 12px}
   .row{display:flex;gap:8px;align-items:center;margin-bottom:12px}
-  input[type=text],select{padding:6px;border-radius:6px;border:1px solid #334155;background:#0b1220;color:#e6eef8}
+  input[type=text],select,input[type=password]{padding:6px;border-radius:6px;border:1px solid #334155;background:#0b1220;color:#e6eef8}
   button{background:#0ea5a4;border:none;color:#042024;padding:8px 10px;border-radius:6px;cursor:pointer}
   button.warn{background:#ef4444;color:#fff}
   table{width:100%;border-collapse:collapse;margin-top:12px}
@@ -24,10 +24,19 @@
   .notice{background:#05232b;padding:10px;border-radius:8px;margin-bottom:12px;color:#9fd0c7}
   .flex{display:flex;gap:8px;align-items:center}
   @media(max-width:880px){.row{flex-direction:column;align-items:stretch}}
+  #loginWrapper {max-width: 320px; margin: 100px auto; padding: 20px; background: #1c293b; border-radius: 10px;}
 </style>
 </head>
 <body>
-<div class="wrap">
+
+<div id="loginWrapper">
+  <h1>Вход в админку</h1>
+  <div class="row"><input id="loginUser" type="text" placeholder="Логин" /></div>
+  <div class="row"><input id="loginPass" type="password" placeholder="Пароль" /></div>
+  <div class="row"><button id="loginBtn">Войти</button></div>
+</div>
+
+<div class="wrap" id="adminPanel" style="display:none;">
   <h1>Admin panel — <span class="pill">yolee01scambase_bot</span></h1>
 
   <div class="notice">
@@ -57,183 +66,195 @@
 </div>
 
 <script>
-(async ()=>{
+(() => {
+  const ADMIN_LOGIN = 'admin';
+  const ADMIN_PASS = '1234';
 
-// --- defaults ---
-const DEFAULT_RAW = "https://raw.githubusercontent.com/ivaniovy1/yolee01scambase/main/db.json";
+  const loginWrapper = document.getElementById('loginWrapper');
+  const adminPanel = document.getElementById('adminPanel');
+  const loginBtn = document.getElementById('loginBtn');
+  const loginUser = document.getElementById('loginUser');
+  const loginPass = document.getElementById('loginPass');
 
-const rawInput = document.getElementById('rawUrl');
-const botInput = document.getElementById('botUser');
-const loadBtn = document.getElementById('loadBtn');
-const tableWrap = document.getElementById('tableWrap');
-const downloadBtn = document.getElementById('downloadBtn');
-const refreshBtn = document.getElementById('refreshBtn');
-const searchInput = document.getElementById('search');
-const filterSelect = document.getElementById('filterStatus');
-const applyFilterBtn = document.getElementById('applyFilter');
+  // === админка элементы ===
+  const DEFAULT_RAW = "https://raw.githubusercontent.com/ivaniovy1/yolee01scambase/main/db.json";
+  const rawInput = document.getElementById('rawUrl');
+  const botInput = document.getElementById('botUser');
+  const loadBtn = document.getElementById('loadBtn');
+  const tableWrap = document.getElementById('tableWrap');
+  const downloadBtn = document.getElementById('downloadBtn');
+  const refreshBtn = document.getElementById('refreshBtn');
+  const searchInput = document.getElementById('search');
+  const filterSelect = document.getElementById('filterStatus');
+  const applyFilterBtn = document.getElementById('applyFilter');
 
-let DB = {}; // in-memory db
+  let DB = {};
 
-function escapeHtml(s){ return String(s||'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;'); }
+  function escapeHtml(s){ return String(s||'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;'); }
 
-function renderTable(data){
-  if(!data) data = {};
-  const keys = Object.keys(data).sort((a,b)=>a.localeCompare(b));
-  let html = `<table><thead><tr>
-    <th>Username</th><th>ID</th><th>Status</th><th>Link/Proof</th><th class="center">Actions</th></tr></thead><tbody>`;
-  if(keys.length===0){
-    html += `<tr><td colspan="5" class="center muted">No records</td></tr>`;
-  } else {
-    for(const k of keys){
-      const item = data[k] || {};
-      const id = item.id ?? '';
-      const status = item.status ?? 'unknown';
-      const link = item.link ?? item.proof ?? '';
-      html += `<tr data-username="${escapeHtml(k)}">
-        <td><strong>${escapeHtml(k)}</strong></td>
-        <td><input data-field="id" value="${escapeHtml(String(id))}" style="width:120px" /></td>
-        <td>
-          <select data-field="status">
-            <option value="unknown"${status==='unknown'?' selected':''}>unknown</option>
-            <option value="trusted"${status==='trusted'?' selected':''}>trusted</option>
-            <option value="scammer"${status==='scammer'?' selected':''}>scammer</option>
-          </select>
-        </td>
-        <td><input data-field="link" value="${escapeHtml(link)}" style="width:100%" /></td>
-        <td class="actions">
-          <div class="flex">
-            <button data-action="copy" title="Copy command">Copy command</button>
-            <button data-action="open">Open bot</button>
-            <button data-action="delete" class="warn">Delete</button>
-          </div>
-        </td>
-      </tr>`;
-    }
-  }
-  html += `</tbody></table>`;
-  tableWrap.innerHTML = html;
-
-  // attach listeners
-  tableWrap.querySelectorAll('button[data-action]').forEach(btn=>{
-    btn.addEventListener('click', onRowAction);
-  });
-}
-
-async function loadDbFromUrl(url){
-  try{
-    const res = await fetch(url, {cache: "no-store"});
-    if(!res.ok) throw new Error('Fetch failed: '+res.status);
-    const json = await res.json();
-    DB = json || {};
-    renderTable(DB);
-    console.log('DB loaded: ' + Object.keys(DB).length + ' records');
-  }catch(err){
-    console.error('Ошибка загрузки DB:', err);
-    alert('Ошибка загрузки DB: ' + err.message + '\nПроверь raw URL и доступность файла.');
-  }
-}
-
-function collectRowData(){
-  const rows = tableWrap.querySelectorAll('tr[data-username]');
-  const newDb = {};
-  rows.forEach(r=>{
-    const username = r.getAttribute('data-username');
-    const idRaw = r.querySelector('input[data-field="id"]').value.trim();
-    const id = idRaw === '' ? null : (isNaN(Number(idRaw)) ? idRaw : Number(idRaw));
-    const status = r.querySelector('select[data-field="status"]').value;
-    const link = r.querySelector('input[data-field="link"]').value.trim() || null;
-    newDb[username] = {};
-    if(id !== null) newDb[username].id = id;
-    if(status) newDb[username].status = status;
-    if(link) newDb[username].link = link;
-  });
-  DB = newDb;
-  return DB;
-}
-
-function downloadDb(){
-  collectRowData();
-  const blob = new Blob([JSON.stringify(DB, null, 2)], {type:'application/json'});
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = 'db.json';
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
-}
-
-// Row actions
-function onRowAction(e){
-  const btn = e.currentTarget;
-  const tr = btn.closest('tr[data-username]');
-  const username = tr.getAttribute('data-username');
-  const id = tr.querySelector('input[data-field="id"]').value.trim();
-  const status = tr.querySelector('select[data-field="status"]').value;
-  const link = tr.querySelector('input[data-field="link"]').value.trim();
-  const bot = (botInput.value || 'yolee01scambase_bot').trim();
-
-  if(btn.dataset.action === 'copy'){
-    let cmd = '';
-    if(status === 'scammer'){
-      const safeLink = link || 'https://t.me/your_proof_link';
-      cmd = `/add ${username} ${safeLink}`;
-    } else if(status === 'trusted'){
-      cmd = `/approve ${username}`;
+  function renderTable(data){
+    if(!data) data = {};
+    const keys = Object.keys(data).sort((a,b)=>a.localeCompare(b));
+    let html = `<table><thead><tr>
+      <th>Username</th><th>ID</th><th>Status</th><th>Link/Proof</th><th class="center">Actions</th></tr></thead><tbody>`;
+    if(keys.length===0){
+      html += `<tr><td colspan="5" class="center muted">No records</td></tr>`;
     } else {
-      cmd = `/del ${username}`;
+      for(const k of keys){
+        const item = data[k] || {};
+        const id = item.id ?? '';
+        const status = item.status ?? 'unknown';
+        const link = item.link ?? item.proof ?? '';
+        html += `<tr data-username="${escapeHtml(k)}">
+          <td><strong>${escapeHtml(k)}</strong></td>
+          <td><input data-field="id" value="${escapeHtml(String(id))}" style="width:120px" /></td>
+          <td>
+            <select data-field="status">
+              <option value="unknown"${status==='unknown'?' selected':''}>unknown</option>
+              <option value="trusted"${status==='trusted'?' selected':''}>trusted</option>
+              <option value="scammer"${status==='scammer'?' selected':''}>scammer</option>
+            </select>
+          </td>
+          <td><input data-field="link" value="${escapeHtml(link)}" style="width:100%" /></td>
+          <td class="actions">
+            <div class="flex">
+              <button data-action="copy" title="Copy command">Copy command</button>
+              <button data-action="open">Open bot</button>
+              <button data-action="delete" class="warn">Delete</button>
+            </div>
+          </td>
+        </tr>`;
+      }
     }
-    navigator.clipboard.writeText(cmd).then(()=> {
-      btn.textContent = 'Copied ✓';
-      setTimeout(()=>btn.textContent='Copy command',1200);
-    }).catch(()=> alert('Не удалось скопировать в буфер.'));
-  } else if(btn.dataset.action === 'open'){
-    const url = `https://t.me/${encodeURIComponent(bot)}`;
-    window.open(url, '_blank');
-  } else if(btn.dataset.action === 'delete'){
-    if(confirm(`Удалить запись ${username}?`)){
-      delete DB[username];
+    html += `</tbody></table>`;
+    tableWrap.innerHTML = html;
+
+    tableWrap.querySelectorAll('button[data-action]').forEach(btn=>{
+      btn.addEventListener('click', onRowAction);
+    });
+  }
+
+  async function loadDbFromUrl(url){
+    try{
+      const res = await fetch(url, {cache: "no-store"});
+      if(!res.ok) throw new Error('Fetch failed: '+res.status);
+      const json = await res.json();
+      DB = json || {};
       renderTable(DB);
+      console.log('DB loaded: ' + Object.keys(DB).length + ' records');
+    }catch(err){
+      console.error('Ошибка загрузки DB:', err);
+      alert('Ошибка загрузки DB: ' + err.message + '\nПроверь raw URL и доступность файла.');
     }
   }
-}
 
-function applyFilter(){
-  const q = (searchInput.value || '').toLowerCase().trim();
-  const status = filterSelect.value;
-  const filtered = {};
-  for(const [k,v] of Object.entries(DB)){
-    if(q && !k.toLowerCase().includes(q)) continue;
-    if(status && (v.status||'unknown') !== status) continue;
-    filtered[k] = v;
+  function collectRowData(){
+    const rows = tableWrap.querySelectorAll('tr[data-username]');
+    const newDb = {};
+    rows.forEach(r=>{
+      const username = r.getAttribute('data-username');
+      const idRaw = r.querySelector('input[data-field="id"]').value.trim();
+      const id = idRaw === '' ? null : (isNaN(Number(idRaw)) ? idRaw : Number(idRaw));
+      const status = r.querySelector('select[data-field="status"]').value;
+      const link = r.querySelector('input[data-field="link"]').value.trim() || null;
+      newDb[username] = {};
+      if(id !== null) newDb[username].id = id;
+      if(status) newDb[username].status = status;
+      if(link) newDb[username].link = link;
+    });
+    DB = newDb;
+    return DB;
   }
-  renderTable(filtered);
-}
 
-// bind buttons
-loadBtn.addEventListener('click', ()=> {
-  const url = rawInput.value.trim();
-  if(!url) return alert('Paste RAW db.json URL first');
-  loadDbFromUrl(url);
-});
-downloadBtn.addEventListener('click', ()=> downloadDb());
-refreshBtn.addEventListener('click', ()=> renderTable(DB));
-applyFilterBtn.addEventListener('click', applyFilter);
-searchInput.addEventListener('keyup', (e)=> { if(e.key === 'Enter') applyFilter(); });
-tableWrap.addEventListener('change', ()=> collectRowData());
+  function downloadDb(){
+    collectRowData();
+    const blob = new Blob([JSON.stringify(DB, null, 2)], {type:'application/json'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'db.json';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  }
 
-// auto-load: priority — ?raw=... param, otherwise DEFAULT_RAW
-const params = new URLSearchParams(location.search);
-const rawParam = params.get('raw');
-const startUrl = rawParam ? rawParam : DEFAULT_RAW;
-rawInput.value = startUrl;
-loadDbFromUrl(startUrl);
+  function onRowAction(e){
+    const btn = e.currentTarget;
+    const tr = btn.closest('tr[data-username]');
+    const username = tr.getAttribute('data-username');
+    const id = tr.querySelector('input[data-field="id"]').value.trim();
+    const status = tr.querySelector('select[data-field="status"]').value;
+    const link = tr.querySelector('input[data-field="link"]').value.trim();
+    const bot = (botInput.value || 'yolee01scambase_bot').trim();
 
-// initial empty render (will be replaced by loaded DB)
-renderTable({});
+    if(btn.dataset.action === 'copy'){
+      let cmd = '';
+      if(status === 'scammer'){
+        const safeLink = link || 'https://t.me/your_proof_link';
+        cmd = `/add ${username} ${safeLink}`;
+      } else if(status === 'trusted'){
+        cmd = `/approve ${username}`;
+      } else {
+        cmd = `/del ${username}`;
+      }
+      navigator.clipboard.writeText(cmd).then(()=> {
+        btn.textContent = 'Copied ✓';
+        setTimeout(()=>btn.textContent='Copy command',1200);
+      }).catch(()=> alert('Не удалось скопировать в буфер.'));
+    } else if(btn.dataset.action === 'open'){
+      const url = `https://t.me/${encodeURIComponent(bot)}`;
+      window.open(url, '_blank');
+    } else if(btn.dataset.action === 'delete'){
+      if(confirm(`Удалить запись ${username}?`)){
+        delete DB[username];
+        renderTable(DB);
+      }
+    }
+  }
 
-})(); 
+  function applyFilter(){
+    const q = (searchInput.value || '').toLowerCase().trim();
+    const status = filterSelect.value;
+    const filtered = {};
+    for(const [k,v] of Object.entries(DB)){
+      if(q && !k.toLowerCase().includes(q)) continue;
+      if(status && (v.status||'unknown') !== status) continue;
+      filtered[k] = v;
+    }
+    renderTable(filtered);
+  }
+
+  // === bind admin panel buttons ===
+  loadBtn.addEventListener('click', ()=> {
+    const url = rawInput.value.trim();
+    if(!url) return alert('Paste RAW db.json URL first');
+    loadDbFromUrl(url);
+  });
+  downloadBtn.addEventListener('click', ()=> downloadDb());
+  refreshBtn.addEventListener('click', ()=> renderTable(DB));
+  applyFilterBtn.addEventListener('click', applyFilter);
+  searchInput.addEventListener('keyup', (e)=> { if(e.key === 'Enter') applyFilter(); });
+  tableWrap.addEventListener('change', ()=> collectRowData());
+
+  // === login button handler ===
+  loginBtn.addEventListener('click', () => {
+    const user = loginUser.value.trim();
+    const pass = loginPass.value.trim();
+
+    if(user === ADMIN_LOGIN && pass === ADMIN_PASS){
+      loginWrapper.style.display = 'none';
+      adminPanel.style.display = 'block';
+
+      rawInput.value = DEFAULT_RAW;
+      loadDbFromUrl(DEFAULT_RAW);
+    } else {
+      alert('❌ Неверный логин или пароль');
+    }
+  });
+
+})();
 </script>
+
 </body>
 </html>
