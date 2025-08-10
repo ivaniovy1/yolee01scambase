@@ -62,6 +62,7 @@
 // === EDIT THESE DEFAULTS IF NEEDED ===
 // User should paste RAW DB URL in the input. Default bot username set.
 const rawInput = document.getElementById('rawUrl');
+rawInput.value = "https://raw.githubusercontent.com/ivaniovy1/yolee01scambase/refs/heads/main/db.json";
 const botInput = document.getElementById('botUser');
 const loadBtn = document.getElementById('loadBtn');
 const tableWrap = document.getElementById('tableWrap');
@@ -248,6 +249,7 @@ if(rawParam){
 
 // initial empty table
 renderTable({});
+loadDbFromUrl(rawInput.value);
 
 })();
 </script>
