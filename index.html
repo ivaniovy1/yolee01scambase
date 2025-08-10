@@ -25,18 +25,20 @@
   .flex{display:flex;gap:8px;align-items:center}
   @media(max-width:880px){.row{flex-direction:column;align-items:stretch}}
   #loginWrapper {max-width: 320px; margin: 100px auto; padding: 20px; background: #1c293b; border-radius: 10px;}
+  #welcomeMsg {margin-bottom: 16px; font-size: 18px; color: #7ee787;}
 </style>
 </head>
 <body>
 
 <div id="loginWrapper">
   <h1>Вход в админку</h1>
-  <div class="row"><input id="loginUser" type="text" placeholder="Логин" /></div>
-  <div class="row"><input id="loginPass" type="password" placeholder="Пароль" /></div>
+  <div class="row"><input id="loginUser" type="text" placeholder="Логин" autocomplete="username" /></div>
+  <div class="row"><input id="loginPass" type="password" placeholder="Пароль" autocomplete="current-password" /></div>
   <div class="row"><button id="loginBtn">Войти</button></div>
 </div>
 
 <div class="wrap" id="adminPanel" style="display:none;">
+  <div id="welcomeMsg"></div>
   <h1>Admin panel — <span class="pill">yolee01scambase_bot</span></h1>
 
   <div class="notice">
@@ -67,14 +69,18 @@
 
 <script>
 (() => {
-  const ADMIN_LOGIN = 'admin';
-  const ADMIN_PASS = '1234';
+  // Пользователи и пароли
+  const USERS = {
+    'yolee': 'Ad1d1',
+    'qwazikus': '1x1x1'
+  };
 
   const loginWrapper = document.getElementById('loginWrapper');
   const adminPanel = document.getElementById('adminPanel');
   const loginBtn = document.getElementById('loginBtn');
   const loginUser = document.getElementById('loginUser');
   const loginPass = document.getElementById('loginPass');
+  const welcomeMsg = document.getElementById('welcomeMsg');
 
   // === админка элементы ===
   const DEFAULT_RAW = "https://raw.githubusercontent.com/ivaniovy1/yolee01scambase/main/db.json";
@@ -242,17 +248,16 @@
     const user = loginUser.value.trim();
     const pass = loginPass.value.trim();
 
-    if(user === ADMIN_LOGIN && pass === ADMIN_PASS){
+    if(USERS[user] && USERS[user] === pass){
       loginWrapper.style.display = 'none';
       adminPanel.style.display = 'block';
-
+      welcomeMsg.textContent = `Добро пожаловать, ${user}!`;
       rawInput.value = DEFAULT_RAW;
       loadDbFromUrl(DEFAULT_RAW);
     } else {
       alert('❌ Неверный логин или пароль');
     }
   });
-
 })();
 </script>
 
