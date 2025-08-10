@@ -57,12 +57,12 @@
 </div>
 
 <script>
-(async()=>{
+(async ()=>{
 
-// === EDIT THESE DEFAULTS IF NEEDED ===
-// User should paste RAW DB URL in the input. Default bot username set.
+// --- defaults ---
+const DEFAULT_RAW = "https://raw.githubusercontent.com/ivaniovy1/yolee01scambase/main/db.json";
+
 const rawInput = document.getElementById('rawUrl');
-rawInput.value = "https://raw.githubusercontent.com/ivaniovy1/yolee01scambase/refs/heads/main/db.json";
 const botInput = document.getElementById('botUser');
 const loadBtn = document.getElementById('loadBtn');
 const tableWrap = document.getElementById('tableWrap');
@@ -73,6 +73,8 @@ const filterSelect = document.getElementById('filterStatus');
 const applyFilterBtn = document.getElementById('applyFilter');
 
 let DB = {}; // in-memory db
+
+function escapeHtml(s){ return String(s||'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;'); }
 
 function renderTable(data){
   if(!data) data = {};
@@ -115,10 +117,7 @@ function renderTable(data){
   tableWrap.querySelectorAll('button[data-action]').forEach(btn=>{
     btn.addEventListener('click', onRowAction);
   });
-});
-
-// escape helper
-function escapeHtml(s){ return String(s||'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;'); }
+}
 
 async function loadDbFromUrl(url){
   try{
@@ -127,24 +126,24 @@ async function loadDbFromUrl(url){
     const json = await res.json();
     DB = json || {};
     renderTable(DB);
-    alert('DB loaded: ' + Object.keys(DB).length + ' records');
+    console.log('DB loaded: ' + Object.keys(DB).length + ' records');
   }catch(err){
-    alert('Ошибка загрузки DB: '+err.message);
-    console.error(err);
+    console.error('Ошибка загрузки DB:', err);
+    alert('Ошибка загрузки DB: ' + err.message + '\nПроверь raw URL и доступность файла.');
   }
 }
 
 function collectRowData(){
-  // read table inputs back into DB object
   const rows = tableWrap.querySelectorAll('tr[data-username]');
   const newDb = {};
   rows.forEach(r=>{
     const username = r.getAttribute('data-username');
-    const id = r.querySelector('input[data-field="id"]').value.trim() || null;
+    const idRaw = r.querySelector('input[data-field="id"]').value.trim();
+    const id = idRaw === '' ? null : (isNaN(Number(idRaw)) ? idRaw : Number(idRaw));
     const status = r.querySelector('select[data-field="status"]').value;
     const link = r.querySelector('input[data-field="link"]').value.trim() || null;
     newDb[username] = {};
-    if(id) newDb[username].id = isNaN(Number(id)) ? id : Number(id);
+    if(id !== null) newDb[username].id = id;
     if(status) newDb[username].status = status;
     if(link) newDb[username].link = link;
   });
@@ -165,7 +164,7 @@ function downloadDb(){
   URL.revokeObjectURL(url);
 }
 
-// Row actions: copy, open, delete
+// Row actions
 function onRowAction(e){
   const btn = e.currentTarget;
   const tr = btn.closest('tr[data-username]');
@@ -173,10 +172,9 @@ function onRowAction(e){
   const id = tr.querySelector('input[data-field="id"]').value.trim();
   const status = tr.querySelector('select[data-field="status"]').value;
   const link = tr.querySelector('input[data-field="link"]').value.trim();
-  const bot = botInput.value.trim() || 'yolee01scambase_bot';
+  const bot = (botInput.value || 'yolee01scambase_bot').trim();
 
   if(btn.dataset.action === 'copy'){
-    // build command: if status=scammer -> /add @username link
     let cmd = '';
     if(status === 'scammer'){
       const safeLink = link || 'https://t.me/your_proof_link';
@@ -184,15 +182,13 @@ function onRowAction(e){
     } else if(status === 'trusted'){
       cmd = `/approve ${username}`;
     } else {
-      // unknown -> /del
       cmd = `/del ${username}`;
     }
     navigator.clipboard.writeText(cmd).then(()=> {
       btn.textContent = 'Copied ✓';
       setTimeout(()=>btn.textContent='Copy command',1200);
-    });
+    }).catch(()=> alert('Не удалось скопировать в буфер.'));
   } else if(btn.dataset.action === 'open'){
-    // open bot chat
     const url = `https://t.me/${encodeURIComponent(bot)}`;
     window.open(url, '_blank');
   } else if(btn.dataset.action === 'delete'){
@@ -203,7 +199,6 @@ function onRowAction(e){
   }
 }
 
-// filter & search
 function applyFilter(){
   const q = (searchInput.value || '').toLowerCase().trim();
   const status = filterSelect.value;
@@ -216,42 +211,29 @@ function applyFilter(){
   renderTable(filtered);
 }
 
-// wire buttons
+// bind buttons
 loadBtn.addEventListener('click', ()=> {
   const url = rawInput.value.trim();
   if(!url) return alert('Paste RAW db.json URL first');
   loadDbFromUrl(url);
 });
-downloadBtn.addEventListener('click', ()=> {
-  downloadDb();
-});
-refreshBtn.addEventListener('click', ()=> {
-  // re-render current in-memory DB
-  renderTable(DB);
-});
+downloadBtn.addEventListener('click', ()=> downloadDb());
+refreshBtn.addEventListener('click', ()=> renderTable(DB));
 applyFilterBtn.addEventListener('click', applyFilter);
-searchInput.addEventListener('keyup', (e)=> {
-  if(e.key === 'Enter') applyFilter();
-});
+searchInput.addEventListener('keyup', (e)=> { if(e.key === 'Enter') applyFilter(); });
+tableWrap.addEventListener('change', ()=> collectRowData());
 
-// allow saving edits inline by re-collecting when inputs change
-tableWrap.addEventListener('change', (e)=>{
-  collectRowData();
-});
-
-// helper: try auto-load if user pasted default raw in query string ?raw=...
+// auto-load: priority — ?raw=... param, otherwise DEFAULT_RAW
 const params = new URLSearchParams(location.search);
 const rawParam = params.get('raw');
-if(rawParam){
-  rawInput.value = rawParam;
-  loadDbFromUrl(rawParam);
-}
+const startUrl = rawParam ? rawParam : DEFAULT_RAW;
+rawInput.value = startUrl;
+loadDbFromUrl(startUrl);
 
-// initial empty table
+// initial empty render (will be replaced by loaded DB)
 renderTable({});
-loadDbFromUrl(rawInput.value);
 
-})();
+})(); 
 </script>
 </body>
 </html>
