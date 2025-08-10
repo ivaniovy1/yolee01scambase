@@ -1,37 +1,255 @@
 <!DOCTYPE html>
 <html lang="ru">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Мой Telegram бот</title>
-  <style>
-    body {
-      font-family: Arial, sans-serif;
-      max-width: 600px;
-      margin: 40px auto;
-      padding: 20px;
-      text-align: center;
-      background: #f5f5f5;
-      color: #333;
-    }
-    a.button {
-      display: inline-block;
-      padding: 12px 24px;
-      background-color: #0088cc;
-      color: white;
-      text-decoration: none;
-      border-radius: 6px;
-      font-weight: bold;
-      margin-top: 20px;
-    }
-    a.button:hover {
-      background-color: #005f99;
-    }
-  </style>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Admin — yolee01scambase_bot</title>
+<style>
+  body{font-family:Inter,Arial,Helvetica,sans-serif;background:#0f1720;color:#e6eef8;margin:0;padding:24px}
+  .wrap{max-width:1100px;margin:0 auto}
+  h1{font-size:20px;margin:0 0 12px}
+  .row{display:flex;gap:8px;align-items:center;margin-bottom:12px}
+  input[type=text],select{padding:6px;border-radius:6px;border:1px solid #334155;background:#0b1220;color:#e6eef8}
+  button{background:#0ea5a4;border:none;color:#042024;padding:8px 10px;border-radius:6px;cursor:pointer}
+  button.warn{background:#ef4444;color:#fff}
+  table{width:100%;border-collapse:collapse;margin-top:12px}
+  th,td{padding:8px;border-bottom:1px solid #163047;text-align:left}
+  th{background:#071426;position:sticky;top:0}
+  .small{font-size:13px;color:#9fb4c8}
+  .muted{color:#88a7bf}
+  .actions button{margin-right:6px}
+  .link a{color:#7ee787}
+  .pill{display:inline-block;padding:4px 8px;border-radius:999px;background:#072633;color:#7ee787;font-weight:600}
+  .center{text-align:center}
+  .notice{background:#05232b;padding:10px;border-radius:8px;margin-bottom:12px;color:#9fd0c7}
+  .flex{display:flex;gap:8px;align-items:center}
+  @media(max-width:880px){.row{flex-direction:column;align-items:stretch}}
+</style>
 </head>
 <body>
-  <h1>Добро пожаловать на сайт моего Telegram бота!</h1>
-  <p>Здесь можно узнать больше о боте и сразу перейти к нему.</p>
-  <a href="https://t.me/yolee01scambase_bot" class="button" target="_blank" rel="noopener noreferrer">Запустить бота</a>
+<div class="wrap">
+  <h1>Admin panel — <span class="pill">yolee01scambase_bot</span></h1>
+
+  <div class="notice">
+    Инструкция: нажми <strong>Load DB</strong> → правь в таблице → нажми <strong>Download DB</strong> и загрузи файл в GitHub (commit). Кнопка "Copy command" копирует готовую команду для вставки в Telegram.
+  </div>
+
+  <div class="row">
+    <input id="rawUrl" type="text" style="flex:1" placeholder="RAW DB URL (например https://raw.githubusercontent.com/USER/REPO/main/db.json)" />
+    <input id="botUser" type="text" placeholder="Bot username (без @)" value="yolee01scambase_bot" />
+    <button id="loadBtn">Load DB</button>
+    <button id="downloadBtn">Download DB</button>
+    <button id="refreshBtn">Refresh view</button>
+  </div>
+
+  <div class="row">
+    <input id="search" type="text" placeholder="Search username..." style="flex:1" />
+    <select id="filterStatus">
+      <option value="">All statuses</option>
+      <option value="scammer">scammer</option>
+      <option value="trusted">trusted</option>
+      <option value="unknown">unknown</option>
+    </select>
+    <button id="applyFilter">Apply</button>
+  </div>
+
+  <div id="tableWrap"></div>
+</div>
+
+<script>
+(async()=>{
+
+// === EDIT THESE DEFAULTS IF NEEDED ===
+// User should paste RAW DB URL in the input. Default bot username set.
+const rawInput = document.getElementById('rawUrl');
+const botInput = document.getElementById('botUser');
+const loadBtn = document.getElementById('loadBtn');
+const tableWrap = document.getElementById('tableWrap');
+const downloadBtn = document.getElementById('downloadBtn');
+const refreshBtn = document.getElementById('refreshBtn');
+const searchInput = document.getElementById('search');
+const filterSelect = document.getElementById('filterStatus');
+const applyFilterBtn = document.getElementById('applyFilter');
+
+let DB = {}; // in-memory db
+
+function renderTable(data){
+  if(!data) data = {};
+  const keys = Object.keys(data).sort((a,b)=>a.localeCompare(b));
+  let html = `<table><thead><tr>
+    <th>Username</th><th>ID</th><th>Status</th><th>Link/Proof</th><th class="center">Actions</th></tr></thead><tbody>`;
+  if(keys.length===0){
+    html += `<tr><td colspan="5" class="center muted">No records</td></tr>`;
+  } else {
+    for(const k of keys){
+      const item = data[k] || {};
+      const id = item.id ?? '';
+      const status = item.status ?? 'unknown';
+      const link = item.link ?? item.proof ?? '';
+      html += `<tr data-username="${escapeHtml(k)}">
+        <td><strong>${escapeHtml(k)}</strong></td>
+        <td><input data-field="id" value="${escapeHtml(String(id))}" style="width:120px" /></td>
+        <td>
+          <select data-field="status">
+            <option value="unknown"${status==='unknown'?' selected':''}>unknown</option>
+            <option value="trusted"${status==='trusted'?' selected':''}>trusted</option>
+            <option value="scammer"${status==='scammer'?' selected':''}>scammer</option>
+          </select>
+        </td>
+        <td><input data-field="link" value="${escapeHtml(link)}" style="width:100%" /></td>
+        <td class="actions">
+          <div class="flex">
+            <button data-action="copy" title="Copy command">Copy command</button>
+            <button data-action="open">Open bot</button>
+            <button data-action="delete" class="warn">Delete</button>
+          </div>
+        </td>
+      </tr>`;
+    }
+  }
+  html += `</tbody></table>`;
+  tableWrap.innerHTML = html;
+
+  // attach listeners
+  tableWrap.querySelectorAll('button[data-action]').forEach(btn=>{
+    btn.addEventListener('click', onRowAction);
+  });
+});
+
+// escape helper
+function escapeHtml(s){ return String(s||'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;'); }
+
+async function loadDbFromUrl(url){
+  try{
+    const res = await fetch(url, {cache: "no-store"});
+    if(!res.ok) throw new Error('Fetch failed: '+res.status);
+    const json = await res.json();
+    DB = json || {};
+    renderTable(DB);
+    alert('DB loaded: ' + Object.keys(DB).length + ' records');
+  }catch(err){
+    alert('Ошибка загрузки DB: '+err.message);
+    console.error(err);
+  }
+}
+
+function collectRowData(){
+  // read table inputs back into DB object
+  const rows = tableWrap.querySelectorAll('tr[data-username]');
+  const newDb = {};
+  rows.forEach(r=>{
+    const username = r.getAttribute('data-username');
+    const id = r.querySelector('input[data-field="id"]').value.trim() || null;
+    const status = r.querySelector('select[data-field="status"]').value;
+    const link = r.querySelector('input[data-field="link"]').value.trim() || null;
+    newDb[username] = {};
+    if(id) newDb[username].id = isNaN(Number(id)) ? id : Number(id);
+    if(status) newDb[username].status = status;
+    if(link) newDb[username].link = link;
+  });
+  DB = newDb;
+  return DB;
+}
+
+function downloadDb(){
+  collectRowData();
+  const blob = new Blob([JSON.stringify(DB, null, 2)], {type:'application/json'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'db.json';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+// Row actions: copy, open, delete
+function onRowAction(e){
+  const btn = e.currentTarget;
+  const tr = btn.closest('tr[data-username]');
+  const username = tr.getAttribute('data-username');
+  const id = tr.querySelector('input[data-field="id"]').value.trim();
+  const status = tr.querySelector('select[data-field="status"]').value;
+  const link = tr.querySelector('input[data-field="link"]').value.trim();
+  const bot = botInput.value.trim() || 'yolee01scambase_bot';
+
+  if(btn.dataset.action === 'copy'){
+    // build command: if status=scammer -> /add @username link
+    let cmd = '';
+    if(status === 'scammer'){
+      const safeLink = link || 'https://t.me/your_proof_link';
+      cmd = `/add ${username} ${safeLink}`;
+    } else if(status === 'trusted'){
+      cmd = `/approve ${username}`;
+    } else {
+      // unknown -> /del
+      cmd = `/del ${username}`;
+    }
+    navigator.clipboard.writeText(cmd).then(()=> {
+      btn.textContent = 'Copied ✓';
+      setTimeout(()=>btn.textContent='Copy command',1200);
+    });
+  } else if(btn.dataset.action === 'open'){
+    // open bot chat
+    const url = `https://t.me/${encodeURIComponent(bot)}`;
+    window.open(url, '_blank');
+  } else if(btn.dataset.action === 'delete'){
+    if(confirm(`Удалить запись ${username}?`)){
+      delete DB[username];
+      renderTable(DB);
+    }
+  }
+}
+
+// filter & search
+function applyFilter(){
+  const q = (searchInput.value || '').toLowerCase().trim();
+  const status = filterSelect.value;
+  const filtered = {};
+  for(const [k,v] of Object.entries(DB)){
+    if(q && !k.toLowerCase().includes(q)) continue;
+    if(status && (v.status||'unknown') !== status) continue;
+    filtered[k] = v;
+  }
+  renderTable(filtered);
+}
+
+// wire buttons
+loadBtn.addEventListener('click', ()=> {
+  const url = rawInput.value.trim();
+  if(!url) return alert('Paste RAW db.json URL first');
+  loadDbFromUrl(url);
+});
+downloadBtn.addEventListener('click', ()=> {
+  downloadDb();
+});
+refreshBtn.addEventListener('click', ()=> {
+  // re-render current in-memory DB
+  renderTable(DB);
+});
+applyFilterBtn.addEventListener('click', applyFilter);
+searchInput.addEventListener('keyup', (e)=> {
+  if(e.key === 'Enter') applyFilter();
+});
+
+// allow saving edits inline by re-collecting when inputs change
+tableWrap.addEventListener('change', (e)=>{
+  collectRowData();
+});
+
+// helper: try auto-load if user pasted default raw in query string ?raw=...
+const params = new URLSearchParams(location.search);
+const rawParam = params.get('raw');
+if(rawParam){
+  rawInput.value = rawParam;
+  loadDbFromUrl(rawParam);
+}
+
+// initial empty table
+renderTable({});
+
+})();
+</script>
 </body>
 </html>
