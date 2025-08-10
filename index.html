@@ -36,6 +36,16 @@
     background-color: #143214;
     color: #6bff8a;
   }
+
+  /* Контейнер для графика */
+  #chartContainer {
+    max-width: 400px;
+    margin: 24px auto 0;
+    background: #05232b;
+    padding: 16px;
+    border-radius: 10px;
+    box-shadow: 0 0 15px #0ea5a4aa;
+  }
 </style>
 </head>
 <body>
@@ -82,11 +92,18 @@
     <button id="sendMsgBtn">Отправить сообщение</button>
   </div>
   <div id="sendStatus" style="margin-top:8px; color:#7ee787;"></div>
+
+  <!-- Контейнер для диаграммы -->
+  <div id="chartContainer">
+    <canvas id="statusChart"></canvas>
+  </div>
 </div>
+
+<!-- Подключаем Chart.js из CDN -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
 <script>
 (() => {
-  // Пользователи и пароли
   const USERS = {
     'yolee': 'Ad1d1',
     'qwazikus': '1x1x11'
@@ -99,7 +116,6 @@
   const loginPass = document.getElementById('loginPass');
   const welcomeMsg = document.getElementById('welcomeMsg');
 
-  // === админка элементы ===
   const DEFAULT_RAW = "https://raw.githubusercontent.com/ivaniovy1/yolee01scambase/main/db.json";
   const rawInput = document.getElementById('rawUrl');
   const botInput = document.getElementById('botUser');
@@ -111,16 +127,16 @@
   const filterSelect = document.getElementById('filterStatus');
   const applyFilterBtn = document.getElementById('applyFilter');
 
-  // Новые элементы для отправки сообщений
   const sendMsgBtn = document.getElementById('sendMsgBtn');
   const chatIdInput = document.getElementById('chatIdInput');
   const messageInput = document.getElementById('messageInput');
   const sendStatus = document.getElementById('sendStatus');
 
-  // Твой токен (НЕ выкладывай в публичный доступ!)
   const BOT_TOKEN = '8324613796:AAH5iDoL8vr7xLKZYSd0npiVlFmVYmu_SAw';
 
   let DB = {};
+
+  let chart = null;
 
   function escapeHtml(s){ return String(s||'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;'); }
 
@@ -135,8 +151,8 @@
       for(const k of keys){
         const item = data[k] || {};
         const id = item.id ?? '';
-        let status = item.status ?? 'trusted'; // по умолчанию trusted
-        if(status !== 'trusted' && status !== 'scammer') status = 'trusted'; // строго два статуса
+        let status = item.status ?? 'trusted';
+        if(status !== 'trusted' && status !== 'scammer') status = 'trusted';
         const link = item.link ?? item.proof ?? '';
         html += `<tr data-username="${escapeHtml(k)}" data-status="${status}">
           <td><strong>${escapeHtml(k)}</strong></td>
@@ -165,10 +181,14 @@
       btn.addEventListener('click', onRowAction);
     });
 
-    // Подвешиваем обработчики на изменения в инпутах таблицы для моментального сохранения
     tableWrap.querySelectorAll('input[data-field], select[data-field]').forEach(el=>{
-      el.oninput = () => collectRowData();
+      el.oninput = () => {
+        collectRowData();
+        updateChart();
+      };
     });
+
+    updateChart();
   }
 
   async function loadDbFromUrl(url){
@@ -199,7 +219,6 @@
       if(id !== null) newDb[username].id = id;
       if(status) newDb[username].status = status;
       if(link) newDb[username].link = link;
-      // Обновляем атрибут для визуала сразу
       r.setAttribute('data-status', status);
     });
     DB = newDb;
@@ -265,7 +284,48 @@
     renderTable(filtered);
   }
 
-  // === bind admin panel buttons ===
+  // Обновляем диаграмму по текущему DB
+  function updateChart(){
+    const counts = {trusted: 0, scammer: 0};
+    for(const val of Object.values(DB)){
+      if(val.status === 'scammer') counts.scammer++;
+      else counts.trusted++;
+    }
+    const ctx = document.getElementById('statusChart').getContext('2d');
+
+    if(chart) chart.destroy();
+
+    chart = new Chart(ctx, {
+      type: 'doughnut',
+      data: {
+        labels: ['trusted', 'scammer'],
+        datasets: [{
+          data: [counts.trusted, counts.scammer],
+          backgroundColor: ['#6bff8a', '#ff6b6b'],
+          borderColor: '#0f1720',
+          borderWidth: 2,
+        }]
+      },
+      options: {
+        responsive: true,
+        plugins: {
+          legend: {
+            position: 'bottom',
+            labels: {
+              color: '#7ee787',
+              font: {size: 14, weight: 'bold'}
+            }
+          },
+          tooltip: {
+            callbacks: {
+              label: context => `${context.label}: ${context.parsed}`
+            }
+          }
+        }
+      }
+    });
+  }
+
   loadBtn.addEventListener('click', ()=> {
     const url = rawInput.value.trim();
     if(!url) return alert('Paste RAW db.json URL first');
@@ -277,7 +337,6 @@
   searchInput.addEventListener('keyup', (e)=> { if(e.key === 'Enter') applyFilter(); });
   tableWrap.addEventListener('change', ()=> collectRowData());
 
-  // Отправка сообщений Telegram Bot API
   sendMsgBtn.addEventListener('click', async () => {
     const chatId = chatIdInput.value.trim();
     const text = messageInput.value.trim();
@@ -321,7 +380,6 @@
     }
   });
 
-  // === login button handler ===
   loginBtn.addEventListener('click', () => {
     const user = loginUser.value.trim();
     const pass = loginPass.value.trim();
@@ -337,14 +395,11 @@
     }
   });
 
-  // auto-load: priority — ?raw=... param, otherwise DEFAULT_RAW
   const params = new URLSearchParams(location.search);
   const rawParam = params.get('raw');
   const startUrl = rawParam ? rawParam : DEFAULT_RAW;
   rawInput.value = startUrl;
-  // Не грузим сразу, грузим после логина
 
-  // initial empty render (будет перерисовано после загрузки)
   renderTable({});
 
 })();
