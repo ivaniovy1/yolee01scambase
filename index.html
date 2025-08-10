@@ -65,6 +65,14 @@
   </div>
 
   <div id="tableWrap"></div>
+
+  <!-- Новая форма отправки сообщений -->
+  <div class="row" style="margin-top:20px; flex-wrap: wrap; gap: 8px;">
+    <input id="chatIdInput" type="text" placeholder="Chat ID или @username группы/канала" style="flex: 1 1 300px;" />
+    <input id="messageInput" type="text" placeholder="Текст сообщения" style="flex: 2 1 400px;" />
+    <button id="sendMsgBtn">Отправить сообщение</button>
+  </div>
+  <div id="sendStatus" style="margin-top:8px; color:#7ee787;"></div>
 </div>
 
 <script>
@@ -93,6 +101,15 @@
   const searchInput = document.getElementById('search');
   const filterSelect = document.getElementById('filterStatus');
   const applyFilterBtn = document.getElementById('applyFilter');
+
+  // Новые элементы для отправки сообщений
+  const sendMsgBtn = document.getElementById('sendMsgBtn');
+  const chatIdInput = document.getElementById('chatIdInput');
+  const messageInput = document.getElementById('messageInput');
+  const sendStatus = document.getElementById('sendStatus');
+
+  // Твой токен (НЕ выкладывай в публичный доступ!)
+  const BOT_TOKEN = '8324613796:AAH5iDoL8vr7xLKZYSd0npiVlFmVYmu_SAw';
 
   let DB = {};
 
@@ -243,6 +260,50 @@
   searchInput.addEventListener('keyup', (e)=> { if(e.key === 'Enter') applyFilter(); });
   tableWrap.addEventListener('change', ()=> collectRowData());
 
+  // Отправка сообщений Telegram Bot API
+  sendMsgBtn.addEventListener('click', async () => {
+    const chatId = chatIdInput.value.trim();
+    const text = messageInput.value.trim();
+
+    if(!chatId) {
+      alert('Введите Chat ID или @username');
+      return;
+    }
+    if(!text) {
+      alert('Введите текст сообщения');
+      return;
+    }
+
+    sendStatus.style.color = '#7ee787';
+    sendStatus.textContent = 'Отправка...';
+
+    try {
+      const response = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+          chat_id: chatId,
+          text: text,
+          parse_mode: 'HTML'
+        })
+      });
+      const result = await response.json();
+
+      if(result.ok) {
+        sendStatus.style.color = '#7ee787';
+        sendStatus.textContent = '✅ Сообщение успешно отправлено!';
+        messageInput.value = '';
+      } else {
+        sendStatus.style.color = '#ef4444';
+        sendStatus.textContent = `❌ Ошибка: ${result.description || 'Неизвестная ошибка'}`;
+      }
+    } catch(e) {
+      sendStatus.style.color = '#ef4444';
+      sendStatus.textContent = '❌ Ошибка сети или сервера.';
+      console.error(e);
+    }
+  });
+
   // === login button handler ===
   loginBtn.addEventListener('click', () => {
     const user = loginUser.value.trim();
@@ -258,6 +319,17 @@
       alert('❌ Неверный логин или пароль');
     }
   });
+
+  // auto-load: priority — ?raw=... param, otherwise DEFAULT_RAW
+  const params = new URLSearchParams(location.search);
+  const rawParam = params.get('raw');
+  const startUrl = rawParam ? rawParam : DEFAULT_RAW;
+  rawInput.value = startUrl;
+  // Не грузим сразу, грузим после логина
+
+  // initial empty render (будет перерисовано после загрузки)
+  renderTable({});
+
 })();
 </script>
 
